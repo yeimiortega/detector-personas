@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detector de personas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --tinta: #14243A;
+      --papel: #EEF2F5;
+      --hoja: #FFFFFF;
+      --linea: #D3DDE5;
+      --suave: #5B6E82;
+      --ok: #0E8F7E;
+      --duda: #D99A00;
+      --acento: #2457D6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--papel);
+      color: var(--tinta);
+      font-family: "Instrument Sans", system-ui, "Segoe UI", sans-serif;
+      padding: 28px 16px 40px;
+    }
+    .pagina { max-width: 960px; margin: 0 auto; }
+    h1 {
+      font-family: "Bricolage Grotesque", "Segoe UI", sans-serif;
+      font-size: clamp(1.8rem, 5vw, 2.6rem);
+      line-height: 1.05;
+      margin: 0 0 8px;
+      letter-spacing: -0.02em;
+    }
+    .sub { margin: 0 0 26px; color: var(--suave); max-width: 52ch; line-height: 1.5; }
+
+    .rejilla { display: grid; gap: 22px; grid-template-columns: 1fr; }
+    @media (min-width: 820px) { .rejilla { grid-template-columns: 1fr 1fr; align-items: start; } }
+
+    .visor {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      background: var(--tinta);
+      border-radius: 22px;
+      overflow: hidden;
+    }
+    .visor canvas, .visor img.foto { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .esq { position: absolute; width: 34px; height: 34px; border: 3px solid rgba(255,255,255,.85); z-index: 2; }
+    .esq.a { top: 16px; left: 16px; border-right: 0; border-bottom: 0; border-top-left-radius: 10px; }
+    .esq.b { top: 16px; right: 16px; border-left: 0; border-bottom: 0; border-top-right-radius: 10px; }
+    .esq.c { bottom: 16px; left: 16px; border-right: 0; border-top: 0; border-bottom-left-radius: 10px; }
+    .esq.d { bottom: 16px; right: 16px; border-left: 0; border-top: 0; border-bottom-right-radius: 10px; }
+    .apagada {
+      position: absolute; inset: 0; z-index: 1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; text-align: center; color: #C9D6E2; padding: 24px;
+    }
+    .apagada p { margin: 0; max-width: 26ch; line-height: 1.4; }
+    .barra-visor {
+      position: absolute; bottom: 14px; left: 0; right: 0;
+      z-index: 3; display: none; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 0 56px;
+    }
+
+    button, .boton {
+      font: inherit; font-weight: 600;
+      border: 0; border-radius: 12px;
+      padding: 12px 20px; cursor: pointer;
+      background: var(--acento); color: #fff;
+      display: inline-block; text-align: center;
+    }
+    button:hover:not(:disabled), .boton:hover { filter: brightness(1.08); }
+    button:focus-visible, input:focus-visible, .boton:focus-within { outline: 3px solid var(--acento); outline-offset: 2px; }
+    button:disabled { opacity: .55; cursor: default; }
+    .claro { background: #fff; color: var(--tinta); }
+    .pequeno { padding: 8px 14px; font-size: .9rem; }
+    .oculto { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+
+    .tarjeta {
+      --estado: var(--linea);
+      background: var(--hoja);
+      border-radius: 22px;
+      padding: 22px;
+      border-top: 6px solid var(--estado);
+      transition: border-color .25s;
+    }
+    .tarjeta[data-e="ok"] { --estado: var(--ok); }
+    .tarjeta[data-e="duda"] { --estado: var(--duda); }
+    .quien {
+      font-family: "Bricolage Grotesque", "Segoe UI", sans-serif;
+      font-size: clamp(2rem, 7vw, 3rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+      min-height: 1.1em;
+      overflow-wrap: anywhere;
+    }
+    .confianza { color: var(--suave); margin: 6px 0 20px; min-height: 1.3em; overflow-wrap: anywhere; }
+
+    .clase { margin-bottom: 11px; }
+    .clase .linea { display: flex; justify-content: space-between; font-size: .92rem; margin-bottom: 5px; }
+    .pista { height: 9px; background: #E4EBF0; border-radius: 6px; overflow: hidden; }
+    .pista > div { height: 100%; width: 0; background: #9FB3C8; border-radius: 6px; transition: width .15s; }
+    .tarjeta[data-e="ok"] .clase.top .pista > div { background: var(--ok); }
+    .tarjeta[data-e="duda"] .clase.top .pista > div { background: var(--duda); }
+
+    .registro { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--linea); }
+    .registro label.etq { display: block; font-size: .92rem; color: var(--suave); margin-bottom: 6px; }
+    .registro .fila { display: flex; gap: 10px; flex-wrap: wrap; }
+    input[type="text"] {
+      font: inherit; flex: 1 1 140px; min-width: 0;
+      padding: 11px 12px; border: 1.5px solid var(--linea); border-radius: 12px; background: #fff; color: var(--tinta);
+    }
+    .auto { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: .95rem; cursor: pointer; }
+    .auto input { width: 20px; height: 20px; accent-color: var(--ok); }
+    #estado { margin: 12px 0 0; min-height: 1.3em; font-size: .95rem; color: var(--suave); }
+    #estado.bien { color: var(--ok); }
+    #estado.mal { color: #B3261E; }
+
+    .seccion { margin-top: 18px; }
+    .seccion h2 { font-size: 1rem; margin: 0 0 8px; font-family: "Bricolage Grotesque", sans-serif; }
+    .conteo { display: flex; gap: 8px; flex-wrap: wrap; }
+    .conteo span { background: #E9F0F5; border-radius: 10px; padding: 6px 12px; font-size: .93rem; }
+    .conteo b { font-family: "Bricolage Grotesque", sans-serif; margin-left: 4px; }
+    #historial { list-style: none; margin: 0; padding: 0; }
+    #historial li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #E4EBF0; font-size: .93rem; }
+    #historial li:last-child { border-bottom: 0; }
+    #historial .vacio { color: var(--suave); }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="pagina">
+    <h1>Detector de personas</h1>
+    <p class="sub">Reconoce quién está frente a la cámara y guarda cada detección en la hoja Registro.</p>
+
+    <div class="rejilla">
+      <div class="visor" id="visor">
+        <span class="esq a"></span><span class="esq b"></span><span class="esq c"></span><span class="esq d"></span>
+
+        <div class="barra-visor" id="barraVisor">
+          <button type="button" class="claro pequeno" onclick="cambiarCamara()">Cambiar cámara</button>
+          <label class="boton claro pequeno">
+            Usar una foto
+            <input type="file" accept="image/*" class="oculto" onchange="clasificarArchivo(this)">
+          </label>
+        </div>
+
+        <div class="apagada" id="apagada">
+          <p>Activa la cámara o usa una foto para empezar a detectar.</p>
+          <button type="button" id="btnCamara" onclick="iniciarCamara()">Iniciar cámara</button>
+          <label class="boton claro">
+            Usar una foto
+            <input type="file" accept="image/*" class="oculto" onchange="clasificarArchivo(this)">
+          </label>
+        </div>
+      </div>
+
+      <div class="tarjeta" id="tarjeta" data-e="">
+        <div class="quien" id="quien">—</div>
+        <div class="confianza" id="confianza">Cargando modelo…</div>
+        <div id="clases"></div>
+
+        <div class="registro">
+          <label class="etq" for="estacion">Estación</label>
+          <div class="fila">
+            <input type="text" id="estacion" value="Estación 1">
+            <button type="button" id="btnRegistrar" onclick="registrarManual()">Registrar detección</button>
+          </div>
+          <label class="auto">
+            <input type="checkbox" id="auto">
+            Registrar automáticamente (una vez por persona)
+          </label>
+          <p id="estado" role="status"></p>
+
+          <div class="seccion">
+            <h2>Conteo de la sesión</h2>
+            <div class="conteo" id="conteo"></div>
+          </div>
+          <div class="seccion">
+            <h2>Últimos registros</h2>
+            <ul id="historial"><li class="vacio">Aún no hay registros.</li></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.3/dist/teachablemachine-image.min.js"></script>
+  <script>
+    // ---- Ajustes ----
+    const URL_MODELO = 'https://teachablemachine.withgoogle.com/models/MiuEXcMv0/';
+    const URL_GUARDAR = 'https://script.google.com/macros/s/AKfycbwjc6tfPzanOjx_LPL8CNuNd2QXyIXNYr-iIXGQ08v6AOvkJlzD0AD6dzkbUMX99YCg/exec';
+    const UMBRAL = 0.85;        // por debajo de esto dice "No identificado"
+    const RACHA = 8;            // cuadros seguidos con la misma persona antes de registrar solo
+    const AUSENCIA_MS = 4000;   // tiempo sin verla para poder registrarla otra vez
+
+    let modelo, webcam, enVivo = false, frontal = true;
+    let actual = { clase: null, conf: 0 };
+    let candidata = null, racha = 0;
+    const bloqueada = {}, vista = {}, conteo = {};
+    const $ = id => document.getElementById(id);
+
+    async function cargarModelo() {
+      try {
+        modelo = await tmImage.load(URL_MODELO + 'model.json', URL_MODELO + 'metadata.json');
+        const nombres = modelo.getClassLabels();
+        $('clases').innerHTML = nombres.map(n =>
+          '<div class="clase"><div class="linea"><span>' + n + '</span><span>0 %</span></div>' +
+          '<div class="pista"><div></div></div></div>').join('');
+        nombres.forEach(n => conteo[n] = 0);
+        pintarConteo();
+        $('confianza').textContent = 'Modelo listo. Inicia la cámara o usa una foto.';
+      } catch (e) {
+        $('confianza').textContent = 'No se pudo cargar el modelo. Revisa el enlace.';
+      }
+    }
+
+    async function abrirCamara() {
+      if (webcam) { try { webcam.stop(); } catch (_) {} if (webcam.canvas) webcam.canvas.remove(); }
+      webcam = new tmImage.Webcam(360, 360, frontal);
+      await webcam.setup({ facingMode: frontal ? 'user' : 'environment' });
+      await webcam.play();
+      const foto = document.querySelector('#visor img.foto');
+      if (foto) foto.style.display = 'none';
+      $('visor').insertBefore(webcam.canvas, $('visor').firstChild);
+      $('apagada').style.display = 'none';
+      $('barraVisor').style.display = 'flex';
+      const eraEnVivo = enVivo;
+      enVivo = true;
+      if (!eraEnVivo) window.requestAnimationFrame(bucle);
+    }
+
+    async function iniciarCamara() {
+      if (!modelo) return;
+      $('btnCamara').disabled = true;
+      try {
+        await abrirCamara();
+      } catch (e) {
+        $('btnCamara').disabled = false;
+        $('confianza').textContent = 'No se pudo abrir la cámara: ' + ((e && (e.name || e.message)) || String(e));
+      }
+    }
+
+    async function cambiarCamara() {
+      frontal = !frontal;
+      try { await abrirCamara(); }
+      catch (e) { frontal = !frontal; $('confianza').textContent = 'No se pudo cambiar la cámara.'; }
+    }
+
+    function mostrar(pred) {
+      const mejor = pred.reduce((a, b) => (b.probability > a.probability ? b : a));
+      actual = { clase: mejor.className, conf: mejor.probability };
+      const seguro = actual.conf >= UMBRAL;
+
+      $('tarjeta').dataset.e = seguro ? 'ok' : 'duda';
+      $('quien').textContent = seguro ? actual.clase : 'No identificado';
+      $('confianza').textContent = seguro
+        ? Math.round(actual.conf * 100) + ' % de confianza'
+        : 'No estoy seguro. Acércate, mira de frente o mejora la luz.';
+
+      const filas = $('clases').children;
+      pred.forEach((p, i) => {
+        const f = filas[i];
+        f.querySelectorAll('.linea span')[1].textContent = Math.round(p.probability * 100) + ' %';
+        f.querySelector('.pista > div').style.width = (p.probability * 100) + '%';
+        f.classList.toggle('top', p === mejor);
+      });
+      return seguro;
+    }
+
+    // Registro automático sin repetidos (solo con cámara en vivo)
+    function autoRegistro(seguro) {
+      const ahora = Date.now();
+      if (seguro) vista[actual.clase] = ahora;
+      Object.keys(bloqueada).forEach(c => {
+        if (bloqueada[c] && ahora - (vista[c] || 0) > AUSENCIA_MS) bloqueada[c] = false;
+      });
+      if (!$('auto').checked) { racha = 0; candidata = null; return; }
+      if (!seguro) { racha = 0; candidata = null; return; }
+      if (actual.clase === candidata) racha++; else { candidata = actual.clase; racha = 1; }
+      if (racha >= RACHA && !bloqueada[actual.clase]) {
+        bloqueada[actual.clase] = true;
+        enviar(actual.clase, actual.conf, 'auto');
+      }
+    }
+
+    async function bucle() {
+      if (!enVivo) return;
+      webcam.update();
+      const seguro = mostrar(await modelo.predict(webcam.canvas));
+      autoRegistro(seguro);
+      window.requestAnimationFrame(bucle);
+    }
+
+    function clasificarArchivo(input) {
+      if (!modelo || !input.files || !input.files[0]) return;
+      enVivo = false;
+      if (webcam && webcam.canvas) webcam.canvas.style.display = 'none';
+      let img = document.querySelector('#visor img.foto');
+      if (!img) {
+        img = document.createElement('img');
+        img.className = 'foto';
+        img.alt = 'Foto para reconocer';
+        $('visor').insertBefore(img, $('visor').firstChild);
+      }
+      img.style.display = '';
+      img.onload = async () => {
+        $('apagada').style.display = 'none';
+        $('barraVisor').style.display = 'flex';
+        mostrar(await modelo.predict(img));
+      };
+      img.src = URL.createObjectURL(input.files[0]);
+      input.value = '';
+    }
+
+    function mensaje(texto, tipo) {
+      const e = $('estado');
+      e.textContent = texto;
+      e.className = tipo || '';
+    }
+
+    function registrarManual() {
+      if (!actual.clase) { mensaje('Inicia la cámara o sube una foto antes de registrar.', 'mal'); return; }
+      if (actual.conf < UMBRAL) { mensaje('No estoy seguro de quién es. Intenta de nuevo.', 'mal'); return; }
+      enviar(actual.clase, actual.conf, enVivo ? 'manual' : 'foto');
+    }
+
+    // Envía la detección a la hoja (a través de Apps Script)
+    async function enviar(clase, conf, modo) {
+      mensaje('Guardando…');
+      try {
+        await fetch(URL_GUARDAR, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            estacion: $('estacion').value,
+            clase: clase,
+            confianza: conf.toFixed(3),
+            modo: modo
+          })
+        });
+        mensaje('Enviado: ' + clase + ' (' + modo + '). Revisa la hoja Registro.', 'bien');
+        conteo[clase] = (conteo[clase] || 0) + 1;
+        pintarConteo();
+        agregarHistorial(clase, conf, modo);
+      } catch (e) {
+        mensaje('No se pudo enviar. Revisa tu conexión.', 'mal');
+        bloqueada[clase] = false;
+      }
+    }
+
+    function pintarConteo() {
+      $('conteo').innerHTML = Object.keys(conteo)
+        .map(n => '<span>' + n + '<b>' + conteo[n] + '</b></span>').join('');
+    }
+
+    function agregarHistorial(clase, conf, modo) {
+      const ul = $('historial');
+      const vacio = ul.querySelector('.vacio');
+      if (vacio) vacio.remove();
+      const hora = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const li = document.createElement('li');
+      li.innerHTML = '<span></span><span></span>';
+      li.children[0].textContent = clase + ' · ' + Math.round(conf * 100) + ' % · ' + modo;
+      li.children[1].textContent = hora;
+      ul.insertBefore(li, ul.firstChild);
+      while (ul.children.length > 8) ul.removeChild(ul.lastChild);
+    }
+
+    cargarModelo();
+  </script>
+</body>
+</html>
