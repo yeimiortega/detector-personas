@@ -71,7 +71,7 @@
       display: inline-block; text-align: center;
     }
     button:hover:not(:disabled), .boton:hover { filter: brightness(1.08); }
-    button:focus-visible, input:focus-visible, .boton:focus-within { outline: 3px solid var(--acento); outline-offset: 2px; }
+    button:focus-visible, input:focus-visible, select:focus-visible, .boton:focus-within { outline: 3px solid var(--acento); outline-offset: 2px; }
     button:disabled { opacity: .55; cursor: default; }
     .claro { background: #fff; color: var(--tinta); }
     .pequeno { padding: 8px 14px; font-size: .9rem; }
@@ -108,7 +108,7 @@
     .registro { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--linea); }
     .registro label.etq { display: block; font-size: .92rem; color: var(--suave); margin-bottom: 6px; }
     .registro .fila { display: flex; gap: 10px; flex-wrap: wrap; }
-    input[type="text"] {
+    input[type="text"], select {
       font: inherit; flex: 1 1 140px; min-width: 0;
       padding: 11px 12px; border: 1.5px solid var(--linea); border-radius: 12px; background: #fff; color: var(--tinta);
     }
@@ -127,6 +127,13 @@
     #historial li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #E4EBF0; font-size: .93rem; }
     #historial li:last-child { border-bottom: 0; }
     #historial .vacio { color: var(--suave); }
+
+    .prueba { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--linea); }
+    .prueba h2 { font-size: 1rem; margin: 0 0 4px; font-family: "Bricolage Grotesque", sans-serif; }
+    .prueba .nota { margin: 0 0 12px; font-size: .9rem; color: var(--suave); line-height: 1.4; }
+    #resultadoPrueba { margin: 12px 0 0; min-height: 1.3em; font-size: .95rem; color: var(--suave); }
+    #resultadoPrueba.bien { color: var(--ok); }
+    #resultadoPrueba.mal { color: #B3261E; }
 
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
@@ -184,6 +191,17 @@
             <ul id="historial"><li class="vacio">Aún no hay registros.</li></ul>
           </div>
         </div>
+
+        <div class="prueba">
+          <h2>Prueba de exactitud</h2>
+          <p class="nota">Elige quién está realmente frente a la cámara y guarda la prueba. Se anota lo que predijo el modelo en la hoja Pruebas.</p>
+          <label class="etq" for="real" style="display:block;font-size:.92rem;color:var(--suave);margin-bottom:6px;">¿Quién es realmente?</label>
+          <div class="fila" style="display:flex;gap:10px;flex-wrap:wrap;">
+            <select id="real"><option value="">Elegir…</option></select>
+            <button type="button" id="btnPrueba" onclick="registrarPrueba()">Registrar prueba</button>
+          </div>
+          <p id="resultadoPrueba" role="status"></p>
+        </div>
       </div>
     </div>
   </div>
@@ -193,7 +211,7 @@
   <script>
     // ---- Ajustes ----
     const URL_MODELO = 'https://teachablemachine.withgoogle.com/models/8NeBym8GK/';
-   const URL_GUARDAR = 'https://script.google.com/macros/s/AKfycbxLEoCUkahEifvIoQkBgYulSDVDgFSuD5agwYyia7nQNOIXsh-njSrmPHf3yDAWvjdCYQ/exec';';
+    const URL_GUARDAR = 'https://script.google.com/macros/s/AKfycbxLEoCUkahEifvIoQkBgYulSDVDgFSuD5agwYyia7nQNOIXsh-njSrmPHf3yDAWvjdCYQ/exec';
     const UMBRAL = 0.80;        // por debajo de esto dice "No identificado"
     const CLASE_VACIA = 'nadie'; // clase que NO se registra en la hoja
     const RACHA = 8;            // cuadros seguidos con la misma persona antes de registrar solo
@@ -202,6 +220,7 @@
     let modelo, webcam, enVivo = false, frontal = true;
     let actual = { clase: null, conf: 0 };
     let candidata = null, racha = 0;
+    let pruebas = 0, aciertos = 0;
     const bloqueada = {}, vista = {}, conteo = {};
     const $ = id => document.getElementById(id);
 
@@ -216,6 +235,12 @@
         $('clases').innerHTML = nombres.map(n =>
           '<div class="clase"><div class="linea"><span>' + n + '</span><span>0 %</span></div>' +
           '<div class="pista"><div></div></div></div>').join('');
+        // Selector de la prueba: usa los mismos nombres del modelo
+        nombres.forEach(n => {
+          const o = document.createElement('option');
+          o.value = n; o.textContent = n;
+          $('real').appendChild(o);
+        });
         nombres.filter(esPersona).forEach(n => conteo[n] = 0);
         pintarConteo();
         $('confianza').textContent = 'Modelo listo. Inicia la cámara o usa una foto.';
@@ -359,6 +384,39 @@
       } catch (e) {
         mensaje('No se pudo enviar. Revisa tu conexión.', 'mal');
         bloqueada[clase] = false;
+      }
+    }
+
+    // Prueba de exactitud: guarda la clase real y la que predijo el modelo
+    // (se guarda la predicción tal cual, aunque la confianza sea baja)
+    async function registrarPrueba() {
+      const r = $('resultadoPrueba');
+      if (!actual.clase) { r.textContent = 'Inicia la cámara o sube una foto antes de la prueba.'; r.className = 'mal'; return; }
+      const real = $('real').value;
+      if (!real) { r.textContent = 'Elige quién es realmente.'; r.className = 'mal'; return; }
+      const predicho = actual.clase, conf = actual.conf;
+      r.textContent = 'Guardando…'; r.className = '';
+      try {
+        await fetch(URL_GUARDAR, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            tipo: 'prueba',
+            real: real,
+            predicho: predicho,
+            confianza: conf.toFixed(3)
+          })
+        });
+        pruebas++;
+        const acierto = real === predicho;
+        if (acierto) aciertos++;
+        r.textContent = 'Prueba ' + pruebas + ': real ' + real + ', predijo ' + predicho + ' ' + (acierto ? '✔' : '✘') +
+          ' · Exactitud de esta sesión: ' + Math.round(aciertos / pruebas * 100) + ' % (' + aciertos + '/' + pruebas + ')';
+        r.className = acierto ? 'bien' : 'mal';
+      } catch (e) {
+        r.textContent = 'No se pudo guardar la prueba. Revisa tu conexión.';
+        r.className = 'mal';
       }
     }
 
