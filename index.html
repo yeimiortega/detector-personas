@@ -194,7 +194,8 @@
     // ---- Ajustes ----
     const URL_MODELO = 'https://teachablemachine.withgoogle.com/models/8NeBym8GK/';
     const URL_GUARDAR = 'https://script.google.com/macros/s/AKfycbwjc6tfPzanOjx_LPL8CNuNd2QXyIXNYr-iIXGQ08v6AOvkJlzD0AD6dzkbUMX99YCg/exec';
-    const UMBRAL = 0.90;        // por debajo de esto dice "No identificado"
+    const UMBRAL = 0.80;        // por debajo de esto dice "No identificado"
+    const CLASE_VACIA = 'nadie'; // clase que NO se registra en la hoja
     const RACHA = 8;            // cuadros seguidos con la misma persona antes de registrar solo
     const AUSENCIA_MS = 4000;   // tiempo sin verla para poder registrarla otra vez
 
@@ -204,6 +205,10 @@
     const bloqueada = {}, vista = {}, conteo = {};
     const $ = id => document.getElementById(id);
 
+    function esPersona(clase) {
+      return clase && clase.toLowerCase() !== CLASE_VACIA;
+    }
+
     async function cargarModelo() {
       try {
         modelo = await tmImage.load(URL_MODELO + 'model.json', URL_MODELO + 'metadata.json');
@@ -211,7 +216,7 @@
         $('clases').innerHTML = nombres.map(n =>
           '<div class="clase"><div class="linea"><span>' + n + '</span><span>0 %</span></div>' +
           '<div class="pista"><div></div></div></div>').join('');
-        nombres.forEach(n => conteo[n] = 0);
+        nombres.filter(esPersona).forEach(n => conteo[n] = 0);
         pintarConteo();
         $('confianza').textContent = 'Modelo listo. Inicia la cámara o usa una foto.';
       } catch (e) {
@@ -254,7 +259,7 @@
     function mostrar(pred) {
       const mejor = pred.reduce((a, b) => (b.probability > a.probability ? b : a));
       actual = { clase: mejor.className, conf: mejor.probability };
-      const seguro = actual.conf >= UMBRAL;
+      const seguro = actual.conf >= UMBRAL && esPersona(actual.clase);
 
       $('tarjeta').dataset.e = seguro ? 'ok' : 'duda';
       $('quien').textContent = seguro ? actual.clase : 'No identificado';
@@ -325,7 +330,10 @@
 
     function registrarManual() {
       if (!actual.clase) { mensaje('Inicia la cámara o sube una foto antes de registrar.', 'mal'); return; }
-      if (actual.conf < UMBRAL) { mensaje('No estoy seguro de quién es. Intenta de nuevo.', 'mal'); return; }
+      if (actual.conf < UMBRAL || !esPersona(actual.clase)) {
+        mensaje('No estoy seguro de quién es. Intenta de nuevo.', 'mal');
+        return;
+      }
       enviar(actual.clase, actual.conf, enVivo ? 'manual' : 'foto');
     }
 
